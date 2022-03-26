@@ -2,6 +2,7 @@
 # bump: alpine link "Release notes" https://alpinelinux.org/posts/Alpine-$LATEST-released.html
 FROM alpine:3.15.2 AS builder
 
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
 RUN apk add --no-cache \
   coreutils \
   rust cargo \
@@ -55,7 +56,8 @@ ARG CXXFLAGS="-O3 -static-libgcc -fno-strict-overflow -fstack-protector-all -fPI
 ARG LDFLAGS="-Wl,-z,relro,-z,now"
 
 # debug builds a bit faster and we don't care about runtime speed
-RUN cargo install --debug --version 0.9.5 cargo-c
+# COPY cargoConfig $HOME/.cargo/config
+# RUN cargo install --debug --version 0.9.5 cargo-c
 
 # before aom as libvmaf uses it
 # bump: vmaf /VMAF_VERSION=([\d.]+)/ https://github.com/Netflix/vmaf.git|*
@@ -80,7 +82,8 @@ RUN  sed -i 's/-lvmaf /-lvmaf -lstdc++ /' /usr/local/lib/pkgconfig/libvmaf.pc
 # bump: aom after COMMIT=$(git ls-remote https://aomedia.googlesource.com/aom v$LATEST^{} | awk '{print $1}') && sed -i -E "s/^ARG AOM_COMMIT=.*/ARG AOM_COMMIT=$COMMIT/" Dockerfile
 # bump: aom link "CHANGELOG" https://aomedia.googlesource.com/aom/+/refs/tags/v$LATEST/CHANGELOG
 ARG AOM_VERSION=3.3.0
-ARG AOM_URL="https://aomedia.googlesource.com/aom"
+# ARG AOM_URL="https://aomedia.googlesource.com/aom"
+ARG AOM_URL="https://github.com/jbeich/aom.git"
 ARG AOM_COMMIT=87460cef80fb03def7d97df1b47bad5432e5e2e4
 RUN \
   git clone --depth 1 --branch v$AOM_VERSION "$AOM_URL" && \
@@ -284,18 +287,18 @@ RUN \
 # bump: rav1e /RAV1E_VERSION=([\d.]+)/ https://github.com/xiph/rav1e.git|/\d+\./|*
 # bump: rav1e after ./hashupdate Dockerfile RAV1E $LATEST
 # bump: rav1e link "Release notes" https://github.com/xiph/rav1e/releases/tag/v$LATEST
-ARG RAV1E_VERSION=0.5.1
-ARG RAV1E_URL="https://github.com/xiph/rav1e/archive/v$RAV1E_VERSION.tar.gz"
-ARG RAV1E_SHA256=7b3060e8305e47f10b79f3a3b3b6adc3a56d7a58b2cb14e86951cc28e1b089fd
-RUN \
-  wget -O rav1e.tar.gz "$RAV1E_URL" && \
-  echo "$RAV1E_SHA256  rav1e.tar.gz" | sha256sum --status -c - && \
-  tar xf rav1e.tar.gz && \
-  cd rav1e-* && \
-  cargo cinstall --release
+# ARG RAV1E_VERSION=0.5.1
+# ARG RAV1E_URL="https://github.com/xiph/rav1e/archive/v$RAV1E_VERSION.tar.gz"
+# ARG RAV1E_SHA256=7b3060e8305e47f10b79f3a3b3b6adc3a56d7a58b2cb14e86951cc28e1b089fd
+# RUN \
+#   wget -O rav1e.tar.gz "$RAV1E_URL" && \
+#   echo "$RAV1E_SHA256  rav1e.tar.gz" | sha256sum --status -c - && \
+#   tar xf rav1e.tar.gz && \
+#   cd rav1e-* && \
+#   cargo cinstall --release
 # cargo-c/alpine rustc results in Libs.private depend on gcc_s
 # https://gitlab.alpinelinux.org/alpine/aports/-/issues/11806
-RUN sed -i 's/-lgcc_s//' /usr/local/lib/pkgconfig/rav1e.pc
+# RUN sed -i 's/-lgcc_s//' /usr/local/lib/pkgconfig/rav1e.pc
 
 # bump: rubberband /RUBBERBAND_VERSION=([\d.]+)/ https://github.com/breakfastquay/rubberband.git|^2
 # bump: rubberband after ./hashupdate Dockerfile RUBBERBAND $LATEST
@@ -559,7 +562,8 @@ RUN \
 # bump: xvid after ./hashupdate Dockerfile XVID $LATEST
 # add extra CFLAGS that are not enabled by -O3
 ARG XVID_VERSION=1.3.7
-ARG XVID_URL="https://downloads.xvid.com/downloads/xvidcore-$XVID_VERSION.tar.gz"
+# ARG XVID_URL="https://downloads.xvid.com/downloads/xvidcore-$XVID_VERSION.tar.gz"
+ARG XVID_URL="https://mirrors.aliyun.com/blfs/conglomeration/xvidcore/xvidcore-$XVID_VERSION.tar.gz"
 ARG XVID_SHA256=abbdcbd39555691dd1c9b4d08f0a031376a3b211652c0d8b3b8aa9be1303ce2d
 RUN \
   wget -O libxvid.tar.gz "$XVID_URL" && \
@@ -593,11 +597,16 @@ ARG FFMPEG_SHA256=c0130b8db2c763430fd1c6905288d61bc44ee0548ad5fcd2dfd650b88432be
 # extra ldflags stack-size=2097152 is to increase default stack size from 128KB (musl default) to something
 # more similar to glibc (2MB). This fixing segfault with libaom-av1 and libsvtav1 as they seems to pass
 # large things on the stack.
+
+# --enable-librav1e \  
+
+COPY patch /patch
 RUN \
   wget -O ffmpeg.tar.bz2 "$FFMPEG_URL" && \
   echo "$FFMPEG_SHA256  ffmpeg.tar.bz2" | sha256sum --status -c - && \
   tar xf ffmpeg.tar.bz2 && \
   cd ffmpeg-* && \
+  cp /patch/* libavformat && \
   sed -i 's/add_ldexeflags -fPIE -pie/add_ldexeflags -fPIE -static-pie/' configure && \
   ./configure \
   --pkg-config-flags="--static" \
@@ -632,7 +641,6 @@ RUN \
   --enable-libopencore-amrwb \
   --enable-libopenjpeg \
   --enable-libopus \
-  --enable-librav1e \
   --enable-librubberband \
   --enable-libshine \
   --enable-libsoxr \
