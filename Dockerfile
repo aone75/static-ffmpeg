@@ -664,7 +664,8 @@ RUN \
   --enable-libzimg \
   --enable-openssl \
   || (cat ffbuild/config.log ; false) \
-  && make -j$(nproc) install
+  && make -j$(nproc) install \
+  && rm -rf /patch
 
 RUN \
   EXPAT_VERSION=$(pkg-config --modversion expat) \
